@@ -1,0 +1,165 @@
+# mem0ai + Qdrant Self-Hosted Memory - 安装指南
+
+## 前提条件
+
+### 1. 安装依赖
+
+```bash
+pip install mem0ai qdrant-client --break-system-packages
+```
+
+### 2. 环境变量
+
+在 `openclaw.json` 或 shell 环境中配置以下变量：
+
+```bash
+# MiniMax LLM API Key
+export MINIMAX_API_KEY="your-minimax-api-key"
+
+# 硅基流动 API Key（用于向量嵌入）
+export OPENAI_API_KEY="your-siliconflow-api-key"
+```
+
+### 3. Qdrant 服务器
+
+需要一台可访问的 Qdrant 服务器，版本建议 >= 1.7.0。
+
+---
+
+## 安装步骤
+
+### 1. 复制 skill 目录
+
+将整个 `mem0-qdrant-hermes/` 目录复制到目标 Hermes 的 skills 目录：
+
+```bash
+cp -r mem0-qdrant-hermes/ /opt/data/skills/mlops/
+```
+
+### 2. 验证安装
+
+```bash
+python3 -c "
+import sys
+sys.path.insert(0, '/usr/local/lib/python3.13/dist-packages')
+from mem0 import Memory
+print('mem0ai import OK')
+"
+```
+
+---
+
+## 配置说明
+
+### 可配置项（需提供）
+
+| 配置项              | 说明              | 来源                              |
+| ------------------- | ----------------- | --------------------------------- |
+| `MINIMAX_API_KEY`   | MiniMax API 凭证  | MiniMax 开放平台                  |
+| `OPENAI_API_KEY`    | 硅基流动 API 凭证 | 硅基流动开放平台                  |
+| `Qdrant URL`        | Qdrant 服务器地址 | 如 `http://your-qdrant-host:6333` |
+| `Qdrant API Key`    | Qdrant 访问密钥   | Qdrant 服务器配置                 |
+| `Qdrant Collection` | Collection 名称   | 默认 `hermes_memories`            |
+
+### LLM 提供者（可选）
+
+当前配置使用 MiniMax (`MiniMax-M2.7`)。如需更换，可选：
+
+- `deepseek` / `openai` / `anthropic` 等（见 SKILL.md Supported LLM Providers）
+
+### 向量模型（可选）
+
+当前使用 `Qwen/Qwen3-Embedding-8B`（4096维），需确认：
+
+- 硅基流动支持的模型
+- `embedding_dims` 与 Qdrant collection 维度一致
+
+---
+
+## 初始化代码
+
+```python
+import os
+sys.path.insert(0, '/usr/local/lib/python3.13/dist-packages')
+
+os.environ['MINIMAX_API_KEY'] = 'your-minimax-api-key'
+os.environ['OPENAI_API_KEY'] = 'your-siliconflow-api-key'
+
+config = {
+    "version": "v1.1",
+    "llm": {
+        "provider": "minimax",
+        "config": {
+            "model": "MiniMax-M2.7",
+            "minimax_base_url": "https://api.minimaxi.com/v1"
+        }
+    },
+    "embedder": {
+        "provider": "openai",
+        "config": {
+            "model": "Qwen/Qwen3-Embedding-8B",
+            "openai_base_url": "https://api.siliconflow.cn/v1",
+            "embedding_dims": 4096
+        }
+    },
+    "vector_store": {
+        "provider": "qdrant",
+        "config": {
+            "url": "http://your-qdrant-host:6333",
+            "api_key": "your-qdrant-api-key",
+            "collection_name": "hermes_memories",
+            "embedding_model_dims": 4096
+        }
+    },
+    "history_db_path": "/opt/data/skills/mlops/mem0-qdrant-hermes/mem0_history.db"
+}
+
+from mem0 import Memory
+m = Memory.from_config(config)
+print("mem0ai + Qdrant 连接成功")
+```
+
+---
+
+## 首次使用 - 创建 Qdrant Collection
+
+如果 `hermes_memories` collection 不存在，mem0ai 会自动创建（向量维度必须匹配）。
+
+如果已存在且维度不匹配，需先删除：
+
+```python
+from qdrant_client import QdrantClient
+client = QdrantClient(url="http://your-qdrant-host:6333", api_key="your-qdrant-api-key")
+client.delete_collection(collection_name="hermes_memories")
+```
+
+---
+
+## 常用操作
+
+```python
+# 存入记忆
+m.add("要记住的内容", user_id="用户名")
+
+# 搜索记忆
+m.search("搜索关键词", user_id="用户名", limit=5)
+
+# 列出所有记忆
+m.get_all(user_id="用户名")
+
+# 删除单条记忆
+m.delete(memory_id="记忆ID", user_id="用户名")
+
+# 清除用户所有记忆
+m.delete_all(user_id="用户名")
+```
+
+---
+
+## 文件说明
+
+| 文件              | 说明                       |
+| ----------------- | -------------------------- |
+| `SKILL.md`        | 完整配置说明（含 API Key） |
+| `INSTALL.md`      | 本安装指南（不含敏感信息） |
+| `mem0_history.db` | SQLite 历史记录数据库      |
